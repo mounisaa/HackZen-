@@ -23,6 +23,7 @@ import {
   CornerDownRight,
   Printer,
   ChevronRight,
+  Upload,
 } from 'lucide-react';
 import { ExtractionResult, ExtractedField, PrescriptionItem } from '../types/document';
 
@@ -32,6 +33,8 @@ interface VerificationWorkspaceProps {
   onUpdateExtraction: (updated: ExtractionResult) => void;
   onSaveToVault: (verifiedData: ExtractionResult) => void;
   isSaving: boolean;
+  onReScan?: () => void;
+  onUploadDocument?: (dataUrl: string) => void;
 }
 
 export const VerificationWorkspace: React.FC<VerificationWorkspaceProps> = ({
@@ -40,15 +43,64 @@ export const VerificationWorkspace: React.FC<VerificationWorkspaceProps> = ({
   onUpdateExtraction,
   onSaveToVault,
   isSaving,
+  onReScan,
+  onUploadDocument,
 }) => {
-  const [activeTab, setActiveTab] = useState<'demographics' | 'vitals' | 'clinical' | 'prescriptions' | 'physician'>('demographics');
+  const [activeTab, setActiveTab] = useState<'verbatim' | 'demographics' | 'vitals' | 'clinical' | 'prescriptions' | 'all-fields' | 'physician'>('verbatim');
   const [activeFieldId, setActiveFieldId] = useState<string | null>('patient_name');
   const [zoomLevel, setZoomLevel] = useState<number>(1.0);
   const [showBoundingBoxes, setShowBoundingBoxes] = useState<boolean>(true);
   const [filterLowConfidence, setFilterLowConfidence] = useState<boolean>(false);
   const [showExportModal, setShowExportModal] = useState<boolean>(false);
+  const [allFieldsFilter, setAllFieldsFilter] = useState<'all' | 'in-pic' | 'null-only'>('all');
+
+  // Custom Field Creator state
+  const [isAddCustomFieldOpen, setIsAddCustomFieldOpen] = useState<boolean>(false);
+  const [newFieldLabel, setNewFieldLabel] = useState<string>('');
+  const [newFieldValue, setNewFieldValue] = useState<string>('');
+  const [newFieldCategory, setNewFieldCategory] = useState<'demographics' | 'vitals' | 'clinical' | 'prescriptions' | 'other'>('clinical');
 
   const imageContainerRef = useRef<HTMLDivElement | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleUploadFromWorkspace = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result && onUploadDocument) {
+          onUploadDocument(event.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleCreateCustomField = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newFieldLabel.trim()) return;
+    const customId = 'field_' + Date.now().toString(36);
+    const customField: ExtractedField = {
+      fieldId: customId,
+      label: newFieldLabel.trim(),
+      value: newFieldValue.trim() || 'null',
+      originalValue: newFieldValue.trim() || 'null',
+      confidence: 1.0,
+      sourceType: 'handwritten',
+      category: newFieldCategory as any,
+      boundingBox: { x: 8, y: 12 + (extractionData.extractedFields.length % 15) * 5, width: 84, height: 4.5 },
+      isVerified: true,
+    };
+
+    onUpdateExtraction({
+      ...extractionData,
+      extractedFields: [...extractionData.extractedFields, customField],
+    });
+
+    setNewFieldLabel('');
+    setNewFieldValue('');
+    setIsAddCustomFieldOpen(false);
+  };
 
   // Field update handler
   const handleFieldValueChange = (fieldId: string, newValue: string) => {
@@ -123,6 +175,12 @@ export const VerificationWorkspace: React.FC<VerificationWorkspaceProps> = ({
   ).length;
 
   const totalFields = extractionData.extractedFields.length;
+  const inPhotoCount = extractionData.extractedFields.filter(
+    (f) => f.value && f.value !== 'null' && f.value.trim() !== ''
+  ).length;
+  const nullFieldsCount = extractionData.extractedFields.filter(
+    (f) => !f.value || f.value === 'null' || f.value.trim() === ''
+  ).length;
   const verifiedCount = extractionData.extractedFields.filter((f) => f.isVerified).length;
   const overallConfidence =
     totalFields > 0
@@ -216,32 +274,40 @@ export const VerificationWorkspace: React.FC<VerificationWorkspaceProps> = ({
             <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">
               METHODOLOGY STAGE 3 TO 6
             </span>
+            <span className="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              Strict Photo Sync Active
+            </span>
             <h1 className="text-xl font-extrabold text-white">
-              AI OCR Extraction &amp; Human-in-the-Loop Verification
+              Document Verification &amp; Digital Form Filling
             </h1>
           </div>
-          <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-            Optical Character Recognition &amp; handwriting models populated the digital form below. Review side-by-side with detected bounding boxes, correct any transcription errors, and approve before encrypted vault storage.
+          <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
+            <strong className="text-teal-300 font-semibold">Strict Extraction Rule:</strong> Details visible in the picture are extracted verbatim. Any details not present in the document are automatically entered as <span className="font-mono text-purple-300 bg-purple-950/60 px-1.5 py-0.5 rounded border border-purple-500/30">null</span>. All fields have immediate in-place editable options.
           </p>
         </div>
 
         {/* Verification Summary Stats */}
-        <div className="flex items-center space-x-3 bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+        <div className="flex items-center space-x-3 bg-slate-950/70 p-3 rounded-xl border border-slate-800 flex-wrap gap-2">
+          <div className="text-center px-2">
+            <div className="text-lg font-black text-cyan-400">{inPhotoCount}</div>
+            <div className="text-[10px] text-slate-400">In Document Pic</div>
+          </div>
+          <div className="h-8 w-px bg-slate-800" />
+          <div className="text-center px-2">
+            <div className="text-lg font-black text-purple-400">{nullFieldsCount}</div>
+            <div className="text-[10px] text-slate-400">Auto-entered null</div>
+          </div>
+          <div className="h-8 w-px bg-slate-800" />
           <div className="text-center px-2">
             <div className="text-lg font-black text-teal-400">{overallConfidence}%</div>
-            <div className="text-[10px] text-slate-400">Mean OCR Conf.</div>
+            <div className="text-[10px] text-slate-400">Mean Conf.</div>
           </div>
           <div className="h-8 w-px bg-slate-800" />
           <div className="text-center px-2">
             <div className="text-lg font-black text-emerald-400">
               {verifiedCount}/{totalFields}
             </div>
-            <div className="text-[10px] text-slate-400">Fields Verified</div>
-          </div>
-          <div className="h-8 w-px bg-slate-800" />
-          <div className="text-center px-2">
-            <div className="text-lg font-black text-amber-400">{correctedCount}</div>
-            <div className="text-[10px] text-slate-400">Errors Rectified</div>
+            <div className="text-[10px] text-slate-400">Verified</div>
           </div>
         </div>
       </div>
@@ -427,7 +493,19 @@ export const VerificationWorkspace: React.FC<VerificationWorkspaceProps> = ({
         <div className="lg:col-span-7 flex flex-col h-[750px] bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
           {/* Section Navigation Tabs */}
           <div className="flex items-center justify-between pb-3 border-b border-slate-800 flex-wrap gap-2">
-            <div className="flex items-center space-x-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800">
+            <div className="flex items-center space-x-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800 flex-wrap gap-1">
+              <button
+                onClick={() => setActiveTab('verbatim')}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                  activeTab === 'verbatim'
+                    ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 font-bold shadow'
+                    : 'text-teal-400 hover:text-teal-200'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>📸 In-Pic Details ({inPhotoCount})</span>
+              </button>
+
               <button
                 onClick={() => setActiveTab('demographics')}
                 className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
@@ -477,6 +555,18 @@ export const VerificationWorkspace: React.FC<VerificationWorkspaceProps> = ({
               </button>
 
               <button
+                onClick={() => setActiveTab('all-fields')}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                  activeTab === 'all-fields'
+                    ? 'bg-teal-500 text-slate-950 font-bold shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>All Extracted Fields</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab('physician')}
                 className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                   activeTab === 'physician'
@@ -489,17 +579,150 @@ export const VerificationWorkspace: React.FC<VerificationWorkspaceProps> = ({
               </button>
             </div>
 
-            <button
-              onClick={verifyAllInSection}
-              className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-semibold border border-emerald-500/30 transition cursor-pointer"
-            >
-              <Check className="w-3.5 h-3.5" />
-              <span>Verify All in Tab</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setIsAddCustomFieldOpen(true)}
+                className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 text-xs font-semibold border border-teal-500/30 transition cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 text-teal-400" />
+                <span>+ Custom Field</span>
+              </button>
+              {onUploadDocument && (
+                <>
+                  <input
+                    type="file"
+                    ref={uploadInputRef}
+                    onChange={handleUploadFromWorkspace}
+                    accept="image/*,.pdf"
+                    className="hidden"
+                  />
+                  <button
+                    onClick={() => uploadInputRef.current?.click()}
+                    className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-slate-950 text-xs font-bold shadow-md shadow-teal-500/20 transition cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-slate-950" />
+                    <span>Upload New Doc</span>
+                  </button>
+                </>
+              )}
+              {onReScan && (
+                <button
+                  onClick={onReScan}
+                  className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-teal-400" />
+                  <span>Re-Scan Active</span>
+                </button>
+              )}
+              <button
+                onClick={verifyAllInSection}
+                className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-semibold border border-emerald-500/30 transition cursor-pointer"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Verify All in Tab</span>
+              </button>
+            </div>
           </div>
 
           {/* Form Scroll Area */}
           <div className="flex-1 overflow-y-auto mt-4 pr-1 space-y-4">
+            {/* 0. Verbatim In-Pic Details Tab (Exact matching to photo) */}
+            {activeTab === 'verbatim' && (
+              <div className="space-y-3">
+                <div className="p-3 bg-teal-950/30 border border-teal-500/40 rounded-xl text-xs text-teal-300 flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>
+                      <strong>Verbatim Document Extraction:</strong> These details were read directly from the picture. Click any item to see its exact location on the image.
+                    </span>
+                  </div>
+                  <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-teal-900/60 text-teal-200 border border-teal-500/30">
+                    {inPhotoCount} Lines Detected
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {extractionData.extractedFields.map((field) => {
+                    const isSelected = activeFieldId === field.fieldId;
+                    const isFieldNull = field.value === 'null' || !field.value;
+                    return (
+                      <div
+                        key={field.fieldId}
+                        onClick={() => setActiveFieldId(field.fieldId)}
+                        className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-teal-950/40 border-teal-400 shadow-md ring-1 ring-teal-400/40'
+                            : isFieldNull
+                            ? 'bg-slate-950/40 border-slate-800/80 hover:border-slate-700'
+                            : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                          <span className="font-bold text-slate-200 text-xs truncate max-w-[180px]">
+                            {field.label}
+                          </span>
+                          <div className="flex items-center space-x-1.5">
+                            {isFieldNull ? (
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                                null
+                              </span>
+                            ) : (
+                              <span
+                                className={`px-1.5 py-0.2 rounded text-[10px] font-mono font-bold ${
+                                  field.confidence >= 0.9
+                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                    : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                }`}
+                              >
+                                {Math.round(field.confidence * 100)}%
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleFieldValueChange(field.fieldId, isFieldNull ? (field.originalValue || '') : 'null');
+                              }}
+                              className="px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-400 hover:text-amber-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 transition cursor-pointer"
+                            >
+                              {isFieldNull ? 'Restore' : 'Set null'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFieldVerification(field.fieldId);
+                              }}
+                              className={`p-1 rounded-md transition cursor-pointer ${
+                                field.isVerified
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                                  : 'bg-slate-800 text-slate-500 hover:text-slate-300 border border-slate-700'
+                              }`}
+                            >
+                              <Check className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <input
+                          type="text"
+                          value={field.value}
+                          onChange={(e) => handleFieldValueChange(field.fieldId, e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 focus:border-teal-400 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none"
+                        />
+
+                        {field.rawSnippet && (
+                          <div className="mt-1 text-[10px] text-slate-400 font-mono truncate">
+                            Raw: {field.rawSnippet}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* 1. Demographics Tab */}
             {activeTab === 'demographics' && (
               <div className="space-y-4">
@@ -729,6 +952,22 @@ export const VerificationWorkspace: React.FC<VerificationWorkspaceProps> = ({
                   onSelect={() => setActiveFieldId('diagnosis')}
                   onToggleVerify={() => toggleFieldVerification('diagnosis')}
                 />
+
+                {/* Previous Diagnosis */}
+                <FormFieldCard
+                  label="Previous Diagnosis (Prior Facility / History)"
+                  fieldId="previous_diagnosis"
+                  value={extractionData.clinicalNotes.previousDiagnosis || ''}
+                  onChange={(val) => {
+                    const updated = { ...extractionData };
+                    updated.clinicalNotes.previousDiagnosis = val;
+                    onUpdateExtraction(updated);
+                  }}
+                  field={extractionData.extractedFields.find((f) => f.fieldId === 'previous_diagnosis')}
+                  isSelected={activeFieldId === 'previous_diagnosis'}
+                  onSelect={() => setActiveFieldId('previous_diagnosis')}
+                  onToggleVerify={() => toggleFieldVerification('previous_diagnosis')}
+                />
               </div>
             )}
 
@@ -835,7 +1074,127 @@ export const VerificationWorkspace: React.FC<VerificationWorkspaceProps> = ({
               </div>
             )}
 
-            {/* 5. Attending Physician Tab */}
+            {/* 5. All Fields Tab (Full line-by-line breakdown matching the document) */}
+            {activeTab === 'all-fields' && (
+              <div className="space-y-3">
+                <div className="p-3 bg-teal-950/20 border border-teal-500/30 rounded-xl text-xs text-teal-300 flex items-center justify-between flex-wrap gap-2">
+                  <span>Structured Form Line-by-Line Breakdown:</span>
+                  <div className="flex items-center space-x-1.5 bg-slate-900 p-1 rounded-lg border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setAllFieldsFilter('all')}
+                      className={`px-2 py-0.5 rounded text-[11px] font-medium transition cursor-pointer ${
+                        allFieldsFilter === 'all' ? 'bg-teal-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      All ({extractionData.extractedFields.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAllFieldsFilter('in-pic')}
+                      className={`px-2 py-0.5 rounded text-[11px] font-medium transition cursor-pointer ${
+                        allFieldsFilter === 'in-pic' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      In Photo ({inPhotoCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAllFieldsFilter('null-only')}
+                      className={`px-2 py-0.5 rounded text-[11px] font-medium transition cursor-pointer ${
+                        allFieldsFilter === 'null-only' ? 'bg-purple-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Null / Missing ({nullFieldsCount})
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2.5">
+                  {extractionData.extractedFields
+                    .filter((field) => {
+                      if (allFieldsFilter === 'in-pic') return field.value && field.value !== 'null';
+                      if (allFieldsFilter === 'null-only') return !field.value || field.value === 'null';
+                      return true;
+                    })
+                    .map((field) => {
+                      const isFieldNull = field.value === 'null' || !field.value;
+                      return (
+                        <div
+                          key={field.fieldId}
+                          onClick={() => setActiveFieldId(field.fieldId)}
+                          className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                            activeFieldId === field.fieldId
+                              ? 'bg-teal-950/40 border-teal-400 shadow-md ring-1 ring-teal-400/40'
+                              : isFieldNull
+                              ? 'bg-slate-950/40 border-slate-800/80 hover:border-slate-700'
+                              : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                            <span className="font-bold text-slate-200 text-xs flex items-center space-x-1.5">
+                              <span>{field.label}</span>
+                              {isFieldNull && (
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                                  null
+                                </span>
+                              )}
+                            </span>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                                {field.sourceType}
+                              </span>
+                              {!isFieldNull && (
+                                <span
+                                  className={`px-1.5 py-0.2 rounded text-[10px] font-mono font-bold ${
+                                    field.confidence >= 0.9
+                                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                      : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                  }`}
+                                >
+                                  {Math.round(field.confidence * 100)}%
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleFieldValueChange(field.fieldId, isFieldNull ? (field.originalValue || '') : 'null');
+                                }}
+                                className="px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-400 hover:text-amber-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 transition cursor-pointer"
+                              >
+                                {isFieldNull ? 'Restore' : 'Set null'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleFieldVerification(field.fieldId);
+                                }}
+                                className={`p-1 rounded-md transition cursor-pointer ${
+                                  field.isVerified
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                                    : 'bg-slate-800 text-slate-500 hover:text-slate-300 border border-slate-700'
+                                }`}
+                              >
+                                <Check className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                          <input
+                            type="text"
+                            value={field.value}
+                            onChange={(e) => handleFieldValueChange(field.fieldId, e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-800 focus:border-teal-400 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none"
+                          />
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
+            {/* 6. Attending Physician Tab */}
             {activeTab === 'physician' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -925,6 +1284,89 @@ export const VerificationWorkspace: React.FC<VerificationWorkspaceProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Add Custom Field Modal */}
+      {isAddCustomFieldOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <h3 className="text-sm font-bold text-white flex items-center space-x-2">
+                <Plus className="w-4 h-4 text-teal-400" />
+                <span>Add Custom Field from Document</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsAddCustomFieldOpen(false)}
+                className="text-slate-400 hover:text-white p-1 text-sm font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCustomField} className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                  Field Label
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Medicine Purchaser, Previous Diagnosis, Ward"
+                  value={newFieldLabel}
+                  onChange={(e) => setNewFieldLabel(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-teal-400 rounded-xl px-3 py-2 text-xs text-white outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                  Field Value (leave blank or enter null if not in document)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. citragen 4 tablets, paracetamol 2 tablets or null"
+                  value={newFieldValue}
+                  onChange={(e) => setNewFieldValue(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-teal-400 rounded-xl px-3 py-2 text-xs text-white outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                  Category
+                </label>
+                <select
+                  value={newFieldCategory}
+                  onChange={(e) => setNewFieldCategory(e.target.value as any)}
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-teal-400 rounded-xl px-3 py-2 text-xs text-white outline-none"
+                >
+                  <option value="demographics">Demographics</option>
+                  <option value="vitals">Vitals</option>
+                  <option value="clinical">Clinical Notes</option>
+                  <option value="prescriptions">Orders / Prescriptions</option>
+                  <option value="other">Other / Custom</option>
+                </select>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddCustomFieldOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs text-slate-300 hover:bg-slate-800 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-teal-500 hover:bg-teal-400 text-slate-950 shadow-md shadow-teal-500/20 transition cursor-pointer"
+                >
+                  Add Field to Form
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -952,6 +1394,7 @@ const FormFieldCard: React.FC<FormFieldCardProps> = ({
   onToggleVerify,
   isTextarea = false,
 }) => {
+  const isNull = value === 'null' || value === '' || value === null || value === undefined;
   const conf = field?.confidence ?? 0.95;
   const isVerified = field?.isVerified ?? false;
   const isCorrected = field?.originalValue && field.originalValue !== value;
@@ -962,25 +1405,68 @@ const FormFieldCard: React.FC<FormFieldCardProps> = ({
       className={`p-3 rounded-xl border transition-all cursor-pointer relative ${
         isSelected
           ? 'bg-teal-950/30 border-teal-500/80 shadow-md ring-1 ring-teal-500/30'
+          : isNull
+          ? 'bg-slate-950/40 border-slate-800/80 hover:border-slate-700'
           : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
       }`}
     >
-      <div className="flex items-center justify-between mb-1.5">
-        <label className="text-xs font-bold text-slate-200 truncate pr-2">{label}</label>
+      <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+        <label className="text-xs font-bold text-slate-200 truncate pr-2 flex items-center space-x-1.5">
+          <span>{label}</span>
+          {isNull && (
+            <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30">
+              null (not in pic)
+            </span>
+          )}
+          {!isNull && field && (
+            <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+              in pic
+            </span>
+          )}
+        </label>
 
         <div className="flex items-center space-x-1.5">
+          {/* Quick Toggle Null / Enter value button */}
+          {isNull ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange('');
+              }}
+              title="Click to enter a custom value"
+              className="px-2 py-0.5 rounded text-[10px] font-medium bg-teal-500/20 text-teal-300 hover:bg-teal-500/30 border border-teal-500/30 transition cursor-pointer"
+            >
+              Enter value
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange('null');
+              }}
+              title="Set to null (if not in picture)"
+              className="px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-400 hover:text-amber-300 bg-slate-800 hover:bg-amber-950/30 border border-slate-700 hover:border-amber-500/40 transition cursor-pointer"
+            >
+              Set null
+            </button>
+          )}
+
           {/* Confidence Badge */}
-          <span
-            className={`px-1.5 py-0.2 rounded text-[10px] font-mono font-bold ${
-              conf >= 0.9
-                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                : conf >= 0.7
-                ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-            }`}
-          >
-            {Math.round(conf * 100)}%
-          </span>
+          {!isNull && (
+            <span
+              className={`px-1.5 py-0.2 rounded text-[10px] font-mono font-bold ${
+                conf >= 0.9
+                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                  : conf >= 0.7
+                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                  : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+              }`}
+            >
+              {Math.round(conf * 100)}%
+            </span>
+          )}
 
           {/* Verification checkmark toggle */}
           <button
@@ -1001,20 +1487,30 @@ const FormFieldCard: React.FC<FormFieldCardProps> = ({
         </div>
       </div>
 
-      {/* Input Field */}
+      {/* Input Field with full editability */}
       {isTextarea ? (
         <textarea
           rows={3}
-          value={value}
+          value={value === 'null' ? 'null' : (value ?? '')}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full bg-slate-900 border border-slate-800 focus:border-teal-400 rounded-lg p-2 text-xs text-slate-100 outline-none resize-none transition"
+          placeholder="null (not provided in document)"
+          className={`w-full border rounded-lg p-2 text-xs outline-none resize-none transition ${
+            isNull
+              ? 'bg-slate-950/80 border-slate-800 text-slate-400 italic focus:text-slate-100 focus:not-italic focus:border-teal-400'
+              : 'bg-slate-900 border-slate-800 focus:border-teal-400 text-slate-100'
+          }`}
         />
       ) : (
         <input
           type="text"
-          value={value}
+          value={value === 'null' ? 'null' : (value ?? '')}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full bg-slate-900 border border-slate-800 focus:border-teal-400 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 outline-none transition"
+          placeholder="null (not provided in document)"
+          className={`w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none transition ${
+            isNull
+              ? 'bg-slate-950/80 border-slate-800 text-slate-400 italic focus:text-slate-100 focus:not-italic focus:border-teal-400'
+              : 'bg-slate-900 border-slate-800 focus:border-teal-400 text-slate-100'
+          }`}
         />
       )}
 

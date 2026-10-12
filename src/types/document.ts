@@ -81,6 +81,7 @@ export interface ClinicalNotes {
   allergies: string;
   medicalHistory: string;
   provisionalDiagnosis: string;
+  previousDiagnosis?: string;
 }
 
 export interface AttendingPhysician {

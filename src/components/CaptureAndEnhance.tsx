@@ -69,9 +69,11 @@ export const CaptureAndEnhance: React.FC<CaptureAndEnhanceProps> = ({
       const reader = new FileReader();
       reader.onload = (event) => {
         if (event.target?.result) {
-          setCurrentImage(event.target.result as string);
-          // reset options for fresh image
+          const dataUrl = event.target.result as string;
+          setCurrentImage(dataUrl);
           setCvOptions(defaultCVOptions);
+          // Automatically run OCR so digital form accurately matches the uploaded document immediately!
+          onRunOCR(dataUrl);
         }
       };
       reader.readAsDataURL(file);
@@ -96,8 +98,11 @@ export const CaptureAndEnhance: React.FC<CaptureAndEnhanceProps> = ({
       const reader = new FileReader();
       reader.onload = (event) => {
         if (event.target?.result) {
-          setCurrentImage(event.target.result as string);
+          const dataUrl = event.target.result as string;
+          setCurrentImage(dataUrl);
           setCvOptions(defaultCVOptions);
+          // Automatically run OCR on dropped document
+          onRunOCR(dataUrl);
         }
       };
       reader.readAsDataURL(file);
@@ -198,6 +203,62 @@ export const CaptureAndEnhance: React.FC<CaptureAndEnhanceProps> = ({
                 </button>
               );
             })}
+          </div>
+        </div>
+      </div>
+
+      {/* Prominent Document Upload & Camera Capture Zone */}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`bg-slate-900 border-2 ${
+          isDragging
+            ? 'border-teal-400 bg-teal-950/30 shadow-teal-500/20'
+            : 'border-dashed border-teal-500/40 hover:border-teal-400 bg-gradient-to-r from-teal-950/20 via-slate-900 to-cyan-950/20'
+        } rounded-2xl p-6 transition-all shadow-xl`}
+      >
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center space-x-4 text-left">
+            <div className="w-14 h-14 rounded-2xl bg-teal-500/10 border border-teal-500/30 flex items-center justify-center text-teal-400 shrink-0 shadow-lg shadow-teal-500/10">
+              <Upload className="w-7 h-7" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h2 className="text-base font-extrabold text-white">Upload Handwritten Document / Image</h2>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                  Instant Auto-Fill
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5 max-w-xl">
+                Upload your handwritten hospital forms, prescription slips, or doctor notes (PNG, JPG, PDF). DocScan AI extracts only details visible in the pic, auto-enters null for missing fields, and fills the editable digital form!
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-3 shrink-0">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept="image/*,.pdf"
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center space-x-2 px-5 py-3 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-slate-950 font-extrabold rounded-xl text-xs shadow-lg shadow-teal-500/25 transition cursor-pointer"
+            >
+              <Upload className="w-4 h-4 text-slate-950" />
+              <span>Choose Photo to Upload</span>
+            </button>
+
+            <button
+              onClick={onOpenLiveCamera}
+              className="flex items-center space-x-2 px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs border border-slate-700 transition cursor-pointer"
+            >
+              <Camera className="w-4 h-4 text-teal-400" />
+              <span>Live Camera</span>
+            </button>
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   FileScan,
   ShieldCheck,
@@ -8,6 +8,7 @@ import {
   Database,
   CheckCircle2,
   HelpCircle,
+  Upload,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -16,6 +17,7 @@ interface NavbarProps {
   vaultRecordCount: number;
   openGuideModal: () => void;
   isProcessing: boolean;
+  onUploadDocument?: (dataUrl: string) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -24,7 +26,23 @@ export const Navbar: React.FC<NavbarProps> = ({
   vaultRecordCount,
   openGuideModal,
   isProcessing,
+  onUploadDocument,
 }) => {
+  const navFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleNavUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result && onUploadDocument) {
+          onUploadDocument(event.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   return (
     <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -95,6 +113,26 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right Action Badges */}
           <div className="flex items-center space-x-2 sm:space-x-3">
+            {/* Quick Upload Form Button */}
+            {onUploadDocument && (
+              <>
+                <input
+                  type="file"
+                  ref={navFileInputRef}
+                  onChange={handleNavUpload}
+                  accept="image/*,.pdf"
+                  className="hidden"
+                />
+                <button
+                  onClick={() => navFileInputRef.current?.click()}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold shadow-md shadow-teal-500/20 transition cursor-pointer"
+                >
+                  <Upload className="w-3.5 h-3.5 text-slate-950" />
+                  <span className="hidden sm:inline">Upload Form</span>
+                </button>
+              </>
+            )}
+
             {/* Security Badge */}
             <div className="hidden md:flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
               <ShieldCheck className="w-3.5 h-3.5" />

@@ -77,8 +77,9 @@ export default function App() {
 
   // Run OCR on preprocessed image
   const handleRunOCR = async (processedDataUrl: string) => {
+    setCurrentImage(processedDataUrl);
     setIsProcessingOCR(true);
-    showToast('Processing OCR with Gemini 3.8 Flash Vision model...', 'info');
+    showToast('Analyzing document with DocScan AI Vision OCR model...', 'info');
 
     try {
       const res = await fetch('/api/ocr-extract', {
@@ -93,14 +94,8 @@ export default function App() {
       if (res.ok) {
         const json = await res.json();
         if (json.data) {
-          // Merge newly returned extracted data
-          const merged: ExtractionResult = {
-            ...extractionData,
-            ...json.data,
-            // Ensure extracted fields list is present
-            extractedFields: json.data.extractedFields || extractionData.extractedFields,
-          };
-          setExtractionData(merged);
+          // Replace extraction data completely so no old preset data lingers
+          setExtractionData(json.data);
         }
       }
     } catch (err: any) {
@@ -109,7 +104,7 @@ export default function App() {
       setIsProcessingOCR(false);
       // Automatically advance to Step 3 / 4 verification tab
       setCurrentTab('verify');
-      showToast('Document scanned! Digital form automatically populated.', 'success');
+      showToast('Document analyzed! Visible details extracted, missing fields auto-entered with null.', 'success');
 
       // Record audit event
       const logHash = await sha256(`${Date.now()}-OCR-EXTRACT`);
@@ -246,6 +241,10 @@ export default function App() {
         vaultRecordCount={records.length}
         openGuideModal={() => setIsGuideOpen(true)}
         isProcessing={isProcessingOCR || isSavingVault}
+        onUploadDocument={(dataUrl) => {
+          setCurrentImage(dataUrl);
+          handleRunOCR(dataUrl);
+        }}
       />
 
       {/* Main Container */}
@@ -269,6 +268,11 @@ export default function App() {
             onUpdateExtraction={setExtractionData}
             onSaveToVault={handleSaveToVault}
             isSaving={isSavingVault}
+            onReScan={() => handleRunOCR(currentImage)}
+            onUploadDocument={(dataUrl) => {
+              setCurrentImage(dataUrl);
+              handleRunOCR(dataUrl);
+            }}
           />
         )}
 
