@@ -1,0 +1,6 @@
+{
+  "name": "DocScan AI - Intelligent Document Capture & Medical Data Extraction",
+  "description": "Intelligent document capture and OCR system for handwritten and printed medical forms with computer vision enhancement, AI extraction, human verification, and AES-256 encrypted storage.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
